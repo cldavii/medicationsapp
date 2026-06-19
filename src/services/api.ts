@@ -1,5 +1,3 @@
-import { Alert } from "react-native";
-
 interface QueryParams {
   search: string;
   districtId: string;
@@ -27,7 +25,7 @@ export async function Api(query: QueryParams) {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        q: query.search,
+        q: query.search.toUpperCase(),
         resource_id: query.districtId,
         limit: 10,
       }),
