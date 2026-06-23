@@ -28,5 +28,10 @@ npm i
 
 [Como executar o backend?](https://github.com/cldavii/medicationsapi)
 
+5. Inicie a aplicação com npm start
+```
+npm start
+```
+
 ---
 ### Pronto, a aplicação vai funcionar e você vai poder consulttar todos os medicamentos disponíveis nos 8 distritos sanitários do Recife!
