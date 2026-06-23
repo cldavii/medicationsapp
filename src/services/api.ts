@@ -1,9 +1,30 @@
+// IP da tua máquina local
+export const BACKEND_URL = "http://192.168.0.31:3000";
+
+// Intarface para formatar os dados retornados da API dados recife
+export interface MedicationResponseFormat {
+  _id: number;
+  unidade: string;
+  produto: string;
+  distrito: number;
+  quantidade: number;
+}
+
+// Interface para a API MedicationsAPI
+export interface FavoriteItem {
+  id?: string;
+  api_id: number;
+  produto: string;
+  unidade: string;
+  distrito: number;
+}
+
 interface QueryParams {
   search: string;
   districtId: string;
 }
 
-// Listagem dos distritos dentro de um array
+// Array com os IDs reais do Portal Dados Recife
 export const districtsArray = [
   { name: "Distrito 1", id: "537f0b95-4eb7-4912-9d7c-32caf9fd68ac" },
   { name: "Distrito 2", id: "30e87813-b5a3-4cbd-b35e-b09156f52698" },
@@ -15,30 +36,59 @@ export const districtsArray = [
   { name: "Distrito 8", id: "2e411ebc-0bef-4e03-ae34-2b792b5468c2" },
 ];
 
-export async function Api(query: QueryParams) {
-  const base_url =
-    "https://dados.recife.pe.gov.br:443/api/action/datastore_search";
+export async function fetchFromRecifeApi(
+  query: QueryParams,
+): Promise<MedicationResponseFormat[]> {
+  const base_url = "https://dados.recife.pe.gov.br/api/action/datastore_search";
   try {
     const response = await fetch(base_url, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-      },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        // Força a entrada de texto ao padrão maiúsculo devido o padrão de retorno da API dados Recife
         q: query.search.toUpperCase(),
         resource_id: query.districtId,
-        limit: 10,
+        limit: 15,
       }),
     });
     const data = await response.json();
-    if (data.success) {
-      return data.result.records;
-    } else {
-      console.error("Não foi possível buscar esses dados na API");
-      throw new Error("Não foi possível buscar esses dados na API");
-    }
-  } catch (error: any) {
-    console.error("Erro durante a busca de dados na API:", error);
+    return data.success ? data.result.records : [];
+  } catch (error) {
+    console.error("Erro na API do Recife:", error);
     return [];
+  }
+}
+
+export async function getFavorites(): Promise<FavoriteItem[]> {
+  try {
+    const response = await fetch(`${BACKEND_URL}/favorites`);
+    return response.ok ? await response.json() : [];
+  } catch (error) {
+    console.error("Erro ao procurar favoritos:", error);
+    return [];
+  }
+}
+
+export async function addFavorite(item: FavoriteItem): Promise<boolean> {
+  try {
+    const response = await fetch(`${BACKEND_URL}/favorites`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(item),
+    });
+    return response.ok;
+  } catch (error) {
+    return false;
+  }
+}
+
+export async function removeFavorite(apiId: number): Promise<boolean> {
+  try {
+    const response = await fetch(`${BACKEND_URL}/favorites/${apiId}`, {
+      method: "DELETE",
+    });
+    return response.ok;
+  } catch (error) {
+    return false;
   }
 }
