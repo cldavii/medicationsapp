@@ -1,72 +1,90 @@
+import React, { useState, useEffect } from "react";
 import {
-  ActivityIndicator,
-  FlatList,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
+  FlatList,
+  TouchableOpacity,
+  ActivityIndicator,
 } from "react-native";
-import { Api, districtsArray } from "@/services/api";
-import { useState } from "react";
-
-interface MedicationReponseFormat {
-  _id: string;
-  produto: string;
-  unidade: string;
-  quantidade: number;
-}
+import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import {
+  fetchFromRecifeApi,
+  districtsArray,
+  addFavorite,
+  removeFavorite,
+  getFavorites,
+  MedicationResponseFormat,
+} from "../services/api";
 
 export default function Index() {
-  const [search, setSearch] = useState<string>("");
-  const [districtId, setDistrictId] = useState<string>("");
-  const [result, setResult] = useState<MedicationReponseFormat[]>([]);
-  const [loading, setLoading] = useState<boolean>(false);
+  const router = useRouter();
+  const [search, setSearch] = useState("");
+  const [selectedDistrictId, setSelectedDistrictId] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<MedicationResponseFormat[]>([]);
+  const [favoriteIds, setFavoriteIds] = useState<number[]>([]);
 
-  // Pegando os dados da API
-  async function getApiData(search: string, districtId: string) {
-    // Verificando se o campo de pesquisa não está nulo
-    if (!search.trim()) return;
+  // Sincroniza os favoritos guardados no banco de dados assim que a app abre
+  useEffect(() => {
+    syncFavorites();
+  }, []);
 
+  const syncFavorites = async () => {
+    const favs = await getFavorites();
+    setFavoriteIds(favs.map((f) => f.api_id));
+  };
+
+  const handleSearch = async (districtId: string, searchTerm: string) => {
+    if (!searchTerm.trim()) return;
     setLoading(true);
+    const data = await fetchFromRecifeApi({ search: searchTerm, districtId });
+    setResults(data);
+    setLoading(false);
+  };
 
-    try {
-      // Buscando o medicamento no distrito selecionado
-      const data = await Api({ search: search, districtId: districtId });
-      setResult(data);
-    } catch (error: any) {
-      console.error(error);
-    } finally {
-      setLoading(false);
+  const handleToggleFavorite = async (item: MedicationResponseFormat) => {
+    const isFav = favoriteIds.includes(item._id);
+    if (isFav) {
+      const success = await removeFavorite(item._id);
+      if (success)
+        setFavoriteIds((prev) => prev.filter((id) => id !== item._id));
+    } else {
+      const success = await addFavorite({
+        api_id: item._id,
+        produto: item.produto,
+        unidade: item.unidade,
+        distrito: item.distrito,
+      });
+      if (success) setFavoriteIds((prev) => [...prev, item._id]);
     }
-  }
-
-  function handleSelectedDistrict(selectedDistrict: string) {
-    setDistrictId(selectedDistrict);
-    getApiData(search, selectedDistrict);
-  }
-
-  function defineDefaultDistrict() {
-    // Se o usuário apertar "buscar" mas não escolheu um distrito, usamos o distrito 1 por padrão
-    const selectedDistrict = districtId || districtsArray[0].id;
-    if (!districtId) {
-      setDistrictId(districtsArray[0].id);
-    }
-    getApiData(search, selectedDistrict);
-  }
+  };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Medicamentos</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>Medicamentos</Text>
+        <TouchableOpacity
+          style={styles.navFavButton}
+          onPress={() => router.push("/favorites")}
+        >
+          <Ionicons name="heart" size={20} color="#FF3B30" />
+          <Text style={styles.navFavText}>Favoritos</Text>
+        </TouchableOpacity>
+      </View>
 
       <TextInput
         style={styles.input}
-        placeholder="Pesquise o medicamento"
+        placeholder="Digita o nome do remédio..."
         placeholderTextColor="#888"
         value={search}
         onChangeText={setSearch}
         returnKeyType="search"
-        onSubmitEditing={defineDefaultDistrict}
+        onSubmitEditing={() =>
+          handleSearch(selectedDistrictId || districtsArray[0].id, search)
+        }
       />
 
       <View style={styles.districtContainer}>
@@ -76,19 +94,22 @@ export default function Index() {
           showsHorizontalScrollIndicator={false}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => {
-            const isSelected = item.id === districtId;
+            const isSelected = item.id === selectedDistrictId;
             return (
               <TouchableOpacity
                 style={[
                   styles.districtButton,
                   isSelected && styles.districtButtonSelected,
                 ]}
-                onPress={() => handleSelectedDistrict(item.id)}
+                onPress={() => {
+                  setSelectedDistrictId(item.id);
+                  handleSearch(item.id, search);
+                }}
               >
                 <Text
                   style={[
                     styles.districtButtonText,
-                    isSelected && styles.districtButtonSelectedText,
+                    isSelected && styles.districtButtonTextSelected,
                   ]}
                 >
                   {item.name}
@@ -98,28 +119,36 @@ export default function Index() {
           }}
         />
       </View>
-
       {loading ? (
         <ActivityIndicator size="large" color="#007BFF" style={{ flex: 1 }} />
       ) : (
         <FlatList
-          data={result}
+          data={results}
           keyExtractor={(item) => item._id.toString()}
           style={styles.resultsList}
           contentContainerStyle={{ paddingBottom: 20 }}
-          // O que aparece se a busca não retornar nada
           ListEmptyComponent={() => (
             <Text style={styles.emptyText}>
               {search
-                ? "Nenhum medicamento encontrado para este distrito"
-                : "Pesquise um medicamento"}
+                ? "Nenhum resultado para este distrito."
+                : "Pesquisa um medicamento para começar."}
             </Text>
           )}
-          renderItem={({ item }) => (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>{item.produto}</Text>
-              <Text style={styles.cardSubtitle}>{item.unidade}</Text>
-              <View style={styles.stockBadge}>
+          renderItem={({ item }) => {
+            const isFav = favoriteIds.includes(item._id);
+            return (
+              <View style={styles.card}>
+                <View style={styles.cardHeaderRow}>
+                  <Text style={styles.cardTitle}>{item.produto}</Text>
+                  <TouchableOpacity onPress={() => handleToggleFavorite(item)}>
+                    <Ionicons
+                      name={isFav ? "heart" : "heart-outline"}
+                      size={24}
+                      color={isFav ? "#FF3B30" : "#888"}
+                    />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.cardSubtitle}>{item.unidade}</Text>
                 <Text
                   style={
                     item.quantidade > 0 ? styles.inStock : styles.outOfStock
@@ -128,8 +157,8 @@ export default function Index() {
                   Estoque: {item.quantidade} unidades
                 </Text>
               </View>
-            </View>
-          )}
+            );
+          }}
         />
       )}
     </View>
@@ -137,58 +166,56 @@ export default function Index() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  container: { flex: 1, backgroundColor: "#F5F7FA", paddingTop: 50 },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
-    paddingTop: 60,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 15,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 10,
-    fontSize: 16,
     width: "90%",
-    paddingHorizontal: 16,
+    alignSelf: "center",
     marginBottom: 15,
   },
-  districtContainer: {
-    height: 50,
-    marginBottom: 15,
-    paddingLeft: "5%",
+  title: { fontSize: 24, fontWeight: "bold", color: "#1A1A1A" },
+  navFavButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
+  navFavText: { marginLeft: 6, fontWeight: "600", color: "#4A5568" },
+  input: {
+    backgroundColor: "#FFF",
+    width: "90%",
+    alignSelf: "center",
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E0E0E0",
+    fontSize: 16,
+    marginBottom: 15,
+  },
+  districtContainer: { height: 50, paddingLeft: "5%" },
   districtButton: {
-    backgroundColor: "#E0E0E0",
+    backgroundColor: "#E2E8F0",
     paddingHorizontal: 16,
-    paddingVertical: 10,
     borderRadius: 20,
     marginRight: 10,
     justifyContent: "center",
     height: 40,
   },
-  districtButtonSelected: {
-    backgroundColor: "#007BFF",
-  },
-  districtButtonText: {
-    color: "#333",
-    fontWeight: "600",
-  },
-  districtButtonSelectedText: {
-    color: "#FFF",
-  },
-  resultsList: {
-    width: "90%",
-    flex: 1,
-  },
+  districtButtonSelected: { backgroundColor: "#007BFF" },
+  districtButtonText: { color: "#4A5568", fontWeight: "600" },
+  districtButtonTextSelected: { color: "#FFF" },
+  resultsList: { width: "90%", alignSelf: "center" },
   emptyText: {
     textAlign: "center",
-    color: "#666",
+    color: "#718096",
     marginTop: 40,
-    fontSize: 16,
-    paddingHorizontal: 20,
+    fontSize: 15,
   },
   card: {
     backgroundColor: "#FFF",
@@ -196,41 +223,21 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#EAEAEA",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
+    borderColor: "#E2E8F0",
+  },
+  cardHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
   },
   cardTitle: {
     fontSize: 16,
     fontWeight: "bold",
-    color: "#222",
+    color: "#2D3748",
+    flex: 1,
+    paddingRight: 10,
   },
-  cardSubtitle: {
-    fontSize: 14,
-    color: "#666",
-    marginTop: 4,
-  },
-  stockBadge: {
-    marginTop: 10,
-    alignSelf: "flex-start",
-  },
-  inStock: {
-    color: "#2E7D32",
-    fontWeight: "bold",
-    backgroundColor: "#E8F5E9",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  outOfStock: {
-    color: "#C62828",
-    fontWeight: "bold",
-    backgroundColor: "#FFEBEE",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
+  cardSubtitle: { fontSize: 14, color: "#718096", marginVertical: 6 },
+  inStock: { color: "#2F855A", fontWeight: "bold", marginTop: 4 },
+  outOfStock: { color: "#C53030", fontWeight: "bold", marginTop: 4 },
 });
