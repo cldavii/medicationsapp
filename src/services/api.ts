@@ -1,5 +1,5 @@
 // IP da tua máquina local
-export const BACKEND_URL = "http://192.168.0.31:3000";
+export const BACKEND_URL = "http://10.123.4.225:3000";
 
 // Intarface para formatar os dados retornados da API dados recife
 export interface MedicationResponseFormat {
